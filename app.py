@@ -259,6 +259,8 @@ def get_cover_letter(resume_text: str, jd_text: str = "") -> str:
 
 
 def text_to_pdf(text: str, title: str) -> bytes:
+    import textwrap
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -267,8 +269,17 @@ def text_to_pdf(text: str, title: str) -> bytes:
     pdf.ln(2)
     pdf.set_font("Helvetica", "", 10.5)
     clean_text = text.encode("latin-1", "replace").decode("latin-1")
+
     for line in clean_text.split("\n"):
-        pdf.multi_cell(0, 6, line)
+        if not line.strip():
+            pdf.ln(4)
+            continue
+        # Manually wrap so no single "word" can ever be too wide for fpdf2's
+        # internal multi_cell wrapping (which crashes on long unbreakable tokens
+        # like URLs or unusual dash-separated phrases).
+        wrapped = textwrap.wrap(line, width=95, break_long_words=True, break_on_hyphens=True) or [""]
+        for sub_line in wrapped:
+            pdf.cell(0, 6, sub_line, ln=True)
     return bytes(pdf.output())
 
 
