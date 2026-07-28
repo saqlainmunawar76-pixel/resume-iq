@@ -31,6 +31,29 @@ st.markdown("""
         display: flex; align-items: center; justify-content: space-between;
         padding: 14px 4px 18px 4px; border-bottom: 1px solid #1F2440; margin-bottom: 22px;
     }
+    .nav-links { display: flex; gap: 28px; }
+    .nav-links span { color: #A6ACC7; font-size: 0.92rem; font-weight: 500; cursor: default; }
+
+    /* Hide the unused native Streamlit sidebar toggle */
+    [data-testid="collapsedControl"] { display: none; }
+    section[data-testid="stSidebar"] { display: none; }
+
+    .hero-title {
+        text-align: center; font-size: 2.6rem; font-weight: 800; color: #F1F3FA;
+        margin: 30px 0 10px 0; line-height: 1.15;
+    }
+    .hero-title span {
+        background: linear-gradient(90deg, #6D5AE6, #8FC2FF);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero-sub {
+        text-align: center; color: #8B92B0; font-size: 1rem; max-width: 620px;
+        margin: 0 auto 34px auto; line-height: 1.6;
+    }
+    .upload-card {
+        background: #12162A; border: 1.5px dashed #2E3358; border-radius: 18px;
+        padding: 30px 30px 10px 30px; margin-bottom: 30px;
+    }
     .brand { font-size: 1.4rem; font-weight: 800; color: #F1F3FA; }
     .brand span { color: #8B7CF6; }
     .brand-sub { color: #6B7290; font-size: 0.78rem; margin-top: -2px; }
@@ -284,42 +307,56 @@ def text_to_pdf(text: str, title: str) -> bytes:
 
 
 # ── Session state ──────────────────────────────────────────────────
-for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter"]:
+for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter", "jd_text"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# ── Sidebar (input) ───────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### 🎯 ResumeIQ")
-    st.caption("AI-powered resume feedback, in seconds.")
-    st.markdown("---")
-    uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf")
-    jd_text = st.text_area("Paste a job description (optional)", height=160, placeholder="Paste the job posting here to unlock JD match and a tailored cover letter...")
-    analyze_clicked = st.button("Analyze Resume", type="primary", use_container_width=True)
-    st.markdown("---")
-    st.markdown("Built for the **Generative AI & Prompt Engineering Internship** @ NeuroFive Solutions")
-
-# ── Top bar ────────────────────────────────────────────────────────
+# ── Top navbar ─────────────────────────────────────────────────────
 st.markdown('''
 <div class="topbar">
     <div><div class="brand">Resume<span>IQ</span></div><div class="brand-sub">AI-Powered Resume Analyzer</div></div>
+    <div class="nav-links">
+        <span>Home</span><span>How It Works</span><span>About</span>
+    </div>
 </div>
 ''', unsafe_allow_html=True)
 
-if uploaded_file and analyze_clicked:
-    st.session_state.resume_text = extract_text(io.BytesIO(uploaded_file.read()))
-    st.session_state.resume_name = uploaded_file.name
-    with st.spinner("Analyzing your resume..."):
-        st.session_state.feedback = get_feedback(st.session_state.resume_text)
-    if jd_text.strip():
-        with st.spinner("Comparing against the job description..."):
-            st.session_state.match = get_match(st.session_state.resume_text, jd_text)
-    else:
-        st.session_state.match = None
-    st.session_state.improved_resume = None
-    st.session_state.cover_letter = None
+# ── Hero upload card (main page, no sidebar) ──────────────────────
+if not st.session_state.resume_text:
+    st.markdown('<div class="hero-title">Get AI-Powered <span>Resume Feedback</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Upload your resume and get an instant, structured AI review — score breakdown, job match, an improved rewrite, and a ready-to-send cover letter.</div>', unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 2.2, 1])
+    with mid:
+        st.markdown('<div class="upload-card">', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf", label_visibility="visible")
+        jd_input = st.text_area("Paste a job description (optional) — unlocks Job Match & a tailored cover letter", height=130, placeholder="Paste the job posting here...")
+        analyze_clicked = st.button("Analyze Resume", type="primary", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if uploaded_file and analyze_clicked:
+        st.session_state.resume_text = extract_text(io.BytesIO(uploaded_file.read()))
+        st.session_state.resume_name = uploaded_file.name
+        st.session_state.jd_text = jd_input
+        with st.spinner("Analyzing your resume..."):
+            st.session_state.feedback = get_feedback(st.session_state.resume_text)
+        if jd_input.strip():
+            with st.spinner("Comparing against the job description..."):
+                st.session_state.match = get_match(st.session_state.resume_text, jd_input)
+        else:
+            st.session_state.match = None
+        st.session_state.improved_resume = None
+        st.session_state.cover_letter = None
+        st.rerun()
 
 if st.session_state.resume_text:
+    _, ctrl, _ = st.columns([1, 2.2, 1])
+    with ctrl:
+        if st.button("⬅ Analyze a different resume", use_container_width=True):
+            for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter", "jd_text"]:
+                st.session_state[key] = None
+            st.rerun()
+
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
 
     # ── Tab 1: Dashboard ──
@@ -398,7 +435,7 @@ if st.session_state.resume_text:
         if st.session_state.improved_resume is None:
             if st.button("Generate Improved Resume", type="primary"):
                 with st.spinner("Rewriting your resume..."):
-                    jd_for_improve = jd_text if jd_text.strip() else ""
+                    jd_for_improve = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
                     st.session_state.improved_resume = get_improved_resume(st.session_state.resume_text, jd_for_improve)
                 st.rerun()
         else:
@@ -411,7 +448,7 @@ if st.session_state.resume_text:
         if st.session_state.cover_letter is None:
             if st.button("Generate Cover Letter", type="primary"):
                 with st.spinner("Writing your cover letter..."):
-                    jd_for_letter = jd_text if jd_text.strip() else ""
+                    jd_for_letter = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
                     st.session_state.cover_letter = get_cover_letter(st.session_state.resume_text, jd_for_letter)
                 st.rerun()
         else:
