@@ -2,16 +2,17 @@
 ResumeIQ — AI-Powered Resume Feedback Tool (Capstone Project)
 Generative AI & Prompt Engineering Internship — NeuroFive Solutions
 
-Features:
-1. Resume Feedback & Scoring (structured JSON output)
-2. Job Description Match Analysis
-3. Improved Resume Generation + PDF Download
-4. Tailored Cover Letter Generation + Download
+A professional dashboard-style resume analysis tool:
+1. Dashboard — score rings, radar chart, strengths/gaps, skills found/missing
+2. Job Match — match % against a pasted job description
+3. Improved Resume — AI rewrite + PDF download
+4. Cover Letter — tailored cover letter + PDF download
 """
 
 import streamlit as st
 import json
 import io
+import plotly.graph_objects as go
 from pypdf import PdfReader
 from fpdf import FPDF
 from google import genai
@@ -23,63 +24,139 @@ st.set_page_config(page_title="ResumeIQ | AI Resume Feedback", page_icon="🎯",
 # ── Styling — Dashboard theme: deep navy + blue-violet accent ─────
 st.markdown("""
 <style>
-    .stApp { background: linear-gradient(180deg, #0B0E1A 0%, #131729 100%); }
-    .main-title {
-        font-size: 2.3rem; font-weight: 800; color: #F1F3FA !important;
-        margin-bottom: 0;
-    }
-    .main-title span { color: #7C6FF0; }
-    .subtitle { color: #8B92B0 !important; font-size: 0.95rem; margin-top: 2px; margin-bottom: 1.5rem; }
+    .stApp { background: #0B0E1A; }
+    * { font-family: 'Inter', -apple-system, sans-serif; }
 
-    .score-card {
-        background: linear-gradient(135deg, #1A1F3A 0%, #1E2340 100%);
-        border: 1px solid #2E3358; border-radius: 14px; padding: 28px 24px;
-        text-align: center; margin-bottom: 16px;
+    .topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 4px 18px 4px; border-bottom: 1px solid #1F2440; margin-bottom: 22px;
     }
-    .score-number { font-size: 3.2rem; font-weight: 800; color: #7C6FF0 !important; line-height: 1; }
-    .score-label { color: #8B92B0 !important; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 6px; }
+    .brand { font-size: 1.4rem; font-weight: 800; color: #F1F3FA; }
+    .brand span { color: #8B7CF6; }
+    .brand-sub { color: #6B7290; font-size: 0.78rem; margin-top: -2px; }
+    .greeting { font-size: 1.6rem; font-weight: 800; color: #F1F3FA; margin-bottom: 2px; }
+    .greeting-sub { color: #8B92B0; font-size: 0.92rem; margin-bottom: 22px; }
 
-    .section-card {
-        background: #161A30; border: 1px solid #2E3358; border-radius: 10px;
-        padding: 16px 20px; margin-bottom: 12px;
+    /* KPI ring cards */
+    .kpi-card {
+        background: #12162A; border: 1px solid #1F2440; border-radius: 16px;
+        padding: 20px 10px 16px 10px; text-align: center; margin-bottom: 14px;
     }
-    .section-card-title { color: #F1F3FA !important; font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
-    .section-card-score { color: #7C6FF0 !important; font-weight: 700; font-size: 1.1rem; float: right; }
-    .section-card-comment { color: #B4B9D4 !important; font-size: 0.9rem; margin-top: 6px; }
+    .kpi-title { color: #A6ACC7; font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; }
+    .kpi-caption { color: #6B7290; font-size: 0.78rem; margin-top: 8px; }
+    .ring-wrap { display: flex; justify-content: center; }
+    .ring {
+        width: 108px; height: 108px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .ring-inner {
+        width: 82px; height: 82px; border-radius: 50%; background: #12162A;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring-number { font-size: 1.5rem; font-weight: 800; color: #F1F3FA; line-height: 1; }
+    .ring-max { font-size: 0.65rem; color: #6B7290; }
 
-    .suggestion-item {
-        background: #161A30; border-left: 3px solid #7C6FF0; border-radius: 6px;
-        padding: 12px 16px; margin-bottom: 8px; color: #D9DCEE !important; font-size: 0.92rem;
+    /* Panels */
+    .panel {
+        background: #12162A; border: 1px solid #1F2440; border-radius: 16px;
+        padding: 20px 22px; margin-bottom: 14px; height: 100%;
     }
-    .match-card {
-        background: linear-gradient(135deg, #1A1F3A 0%, #1E2340 100%);
-        border: 1px solid #2E3358; border-radius: 14px; padding: 24px; text-align: center;
+    .panel-title { color: #F1F3FA; font-weight: 700; font-size: 1.02rem; margin-bottom: 14px; }
+    .summary-text { color: #B4B9D4; font-size: 0.9rem; line-height: 1.6; margin-bottom: 14px; }
+    .callout { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-start; }
+    .callout-icon { font-size: 1rem; margin-top: 1px; }
+    .callout-label { color: #F1F3FA; font-weight: 700; font-size: 0.88rem; }
+    .callout-text { color: #9BA1C0; font-size: 0.85rem; }
+
+    .list-item { color: #C3C8E0; font-size: 0.87rem; margin-bottom: 8px; display: flex; gap: 8px; }
+    .list-item.good::before { content: "✓"; color: #5FD68A; font-weight: 700; }
+    .list-item.warn::before { content: "•"; color: #E8B84F; font-weight: 700; }
+
+    .chip { display: inline-block; border-radius: 20px; padding: 5px 14px; margin: 4px 4px 0 0; font-size: 0.82rem; }
+    .chip-found { background: #14213A; border: 1px solid #2A3F63; color: #8FC2FF; }
+    .chip-missing { background: #2E1620; border: 1px solid #5C2A38; color: #FF9CA8; }
+
+    .cta-banner {
+        background: linear-gradient(90deg, #6D5AE6 0%, #8B7CF6 100%);
+        border-radius: 16px; padding: 22px 26px; display: flex; align-items: center;
+        justify-content: space-between; margin-top: 6px;
     }
-    .match-number { font-size: 2.8rem; font-weight: 800; line-height: 1; }
-    .keyword-chip {
-        display: inline-block; background: #2A2145; border: 1px solid #4A3D7A; color: #C9B8FF !important;
-        border-radius: 20px; padding: 4px 14px; margin: 4px; font-size: 0.85rem;
+    .cta-title { color: #FFFFFF; font-weight: 700; font-size: 1.05rem; }
+    .cta-sub { color: #E4DFFF; font-size: 0.85rem; margin-top: 2px; }
+
+    .match-hero {
+        background: #12162A; border: 1px solid #1F2440; border-radius: 16px;
+        padding: 30px; text-align: center;
     }
+    .match-number { font-size: 3rem; font-weight: 800; line-height: 1; }
     .content-box {
-        background: #161A30; border: 1px solid #2E3358; border-radius: 10px;
-        padding: 20px 24px; color: #D9DCEE !important; font-size: 0.92rem; line-height: 1.7;
-        white-space: pre-wrap;
+        background: #12162A; border: 1px solid #1F2440; border-radius: 14px;
+        padding: 22px 26px; color: #D9DCEE; font-size: 0.92rem; line-height: 1.75; white-space: pre-wrap;
     }
 
-    section[data-testid="stSidebar"] { background: #0D0F1C !important; border-right: 1px solid #2E3358; }
+    section[data-testid="stSidebar"] { background: #0D0F1C !important; border-right: 1px solid #1F2440; }
     section[data-testid="stSidebar"] * { color: #D9DCEE !important; }
-    section[data-testid="stSidebar"] h3 { color: #7C6FF0 !important; }
-
-    .stButton button[kind="primary"] { background-color: #7C6FF0 !important; border: none !important; font-weight: 600 !important; }
-    .stDownloadButton button { background-color: #1E2340 !important; color: #F1F3FA !important; border: 1px solid #4A3D7A !important; }
-    [data-testid="stFileUploaderDropzone"] { background-color: #161A30 !important; border: 1.5px dashed #2E3358 !important; }
+    section[data-testid="stSidebar"] h3 { color: #8B7CF6 !important; }
+    .stButton button[kind="primary"] { background-color: #6D5AE6 !important; border: none !important; font-weight: 600 !important; }
+    .stDownloadButton button { background-color: #1A1F3A !important; color: #F1F3FA !important; border: 1px solid #2E3358 !important; }
+    [data-testid="stFileUploaderDropzone"] { background-color: #12162A !important; border: 1.5px dashed #2E3358 !important; }
     [data-testid="stFileUploaderDropzone"] * { color: #B4B9D4 !important; }
-    .stTextArea textarea { background-color: #161A30 !important; color: #D9DCEE !important; border: 1px solid #2E3358 !important; }
-    [data-testid="stAlert"] { background-color: #161A30 !important; color: #D9DCEE !important; }
+    .stTextArea textarea { background-color: #12162A !important; color: #D9DCEE !important; border: 1px solid #2E3358 !important; }
+    [data-testid="stAlert"] { background-color: #12162A !important; color: #D9DCEE !important; }
     [data-testid="stAlert"] * { color: #D9DCEE !important; }
+    .stTabs [data-baseweb="tab"] { color: #8B92B0; }
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
+
+
+def ring_color(score: int) -> str:
+    if score >= 75:
+        return "#5FD68A"
+    if score >= 50:
+        return "#E8B84F"
+    return "#E8615F"
+
+
+def ring_html(label: str, score: int, caption: str = "") -> str:
+    color = ring_color(score)
+    pct = max(0, min(score, 100))
+    return f'''
+    <div class="kpi-card">
+        <div class="kpi-title">{label}</div>
+        <div class="ring-wrap">
+            <div class="ring" style="background: conic-gradient({color} {pct * 3.6}deg, #1F2440 0deg);">
+                <div class="ring-inner">
+                    <div class="ring-number">{score}</div>
+                    <div class="ring-max">/100</div>
+                </div>
+            </div>
+        </div>
+        <div class="kpi-caption">{caption}</div>
+    </div>
+    '''
+
+
+def radar_chart(sections: list[dict]):
+    labels = [s["name"] for s in sections]
+    values = [s["score"] for s in sections]
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values + [values[0]], theta=labels + [labels[0]],
+        fill="toself", fillcolor="rgba(139,124,246,0.25)",
+        line=dict(color="#8B7CF6", width=2), marker=dict(color="#8B7CF6", size=6),
+    ))
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(visible=True, range=[0, 100], gridcolor="#2E3358", tickfont=dict(color="#6B7290", size=9)),
+            angularaxis=dict(gridcolor="#2E3358", tickfont=dict(color="#B4B9D4", size=11)),
+        ),
+        showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=40, r=40, t=20, b=20), height=320,
+    )
+    return fig
+
 
 # ── Backend ────────────────────────────────────────────────────────
 API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -108,9 +185,14 @@ FEEDBACK_SCHEMA = {
                 "required": ["name", "score", "comment"],
             },
         },
-        "top_suggestions": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "areas_to_improve": {"type": "array", "items": {"type": "string"}},
+        "top_suggestion": {"type": "string"},
+        "skills_found": {"type": "array", "items": {"type": "string"}},
+        "missing_skills": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["overall_score", "sections", "top_suggestions"],
+    "required": ["overall_score", "sections", "summary", "strengths", "areas_to_improve", "top_suggestion", "skills_found", "missing_skills"],
 }
 
 MATCH_SCHEMA = {
@@ -125,17 +207,12 @@ MATCH_SCHEMA = {
 
 
 def get_feedback(resume_text: str) -> dict:
-    prompt = f"""Analyze this resume and score it. Be honest and specific, not generic.
-
-Resume:
-{resume_text}"""
+    prompt = f"Analyze this resume and score it. Be honest and specific, not generic.\n\nResume:\n{resume_text}"
     response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
+        model=MODEL, contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction="You are an expert resume reviewer and career coach with 15 years of experience in tech recruiting. Score resumes honestly on a 0-100 scale across four dimensions: Experience (how well accomplishments are conveyed), Skills (relevance and clarity), Formatting (structure, scannability), and Impact (use of metrics, action verbs, results-oriented language). Give specific, actionable suggestions, not generic advice.",
-            response_mime_type="application/json",
-            response_schema=FEEDBACK_SCHEMA,
+            system_instruction="You are an expert resume reviewer and career coach with 15 years of experience in tech recruiting. Score resumes honestly on a 0-100 scale across four dimensions: Experience, Skills, Formatting, and Impact. Write a 2-sentence summary. List 3-4 genuine strengths, 3-4 areas to improve, one single top-priority suggestion, key skills actually found in the resume, and important skills commonly expected for this candidate's field that appear to be missing.",
+            response_mime_type="application/json", response_schema=FEEDBACK_SCHEMA,
             thinking_config=types.ThinkingConfig(thinking_level="medium"),
         ),
     )
@@ -143,18 +220,12 @@ Resume:
 
 
 def get_match(resume_text: str, jd_text: str) -> dict:
-    prompt = f"""Resume:
-{resume_text}
-
-Job Description:
-{jd_text}"""
+    prompt = f"Resume:\n{resume_text}\n\nJob Description:\n{jd_text}"
     response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
+        model=MODEL, contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction="You are an ATS (Applicant Tracking System) and recruiting expert. Compare the resume against the job description. Calculate a realistic match percentage, list specific important keywords/skills from the JD that are missing from the resume, and give concrete suggestions for tailoring the resume to this specific job.",
-            response_mime_type="application/json",
-            response_schema=MATCH_SCHEMA,
+            system_instruction="You are an ATS and recruiting expert. Compare the resume against the job description. Calculate a realistic match percentage, list specific important keywords/skills from the JD missing from the resume, and give concrete tailoring suggestions.",
+            response_mime_type="application/json", response_schema=MATCH_SCHEMA,
             thinking_config=types.ThinkingConfig(thinking_level="medium"),
         ),
     )
@@ -165,10 +236,9 @@ def get_improved_resume(resume_text: str, jd_text: str = "") -> str:
     context = f"\n\nTailor it toward this job description:\n{jd_text}" if jd_text else ""
     prompt = f"Rewrite and improve this resume. Keep the same factual content (don't invent experience), but strengthen bullet points with action verbs, quantify impact where plausible, and improve clarity and structure.{context}\n\nOriginal Resume:\n{resume_text}"
     response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
+        model=MODEL, contents=prompt,
         config=types.GenerateContentConfig(
-            system_instruction="You are a professional resume writer. Output ONLY the improved resume text, well-structured with clear section headers. No preamble, no explanation, just the resume content.",
+            system_instruction="You are a professional resume writer. Output ONLY the improved resume text, well-structured with clear section headers. No preamble, no explanation.",
             thinking_config=types.ThinkingConfig(thinking_level="medium"),
         ),
     )
@@ -179,8 +249,7 @@ def get_cover_letter(resume_text: str, jd_text: str = "") -> str:
     context = f"for this specific job:\n{jd_text}" if jd_text else "as a general, professional cover letter template"
     prompt = f"Write a compelling, concise cover letter (250-350 words) based on this resume, {context}\n\nResume:\n{resume_text}"
     response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
+        model=MODEL, contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction="You are a professional cover letter writer. Write in first person, confident but not arrogant tone. Output ONLY the cover letter text, no preamble.",
             thinking_config=types.ThinkingConfig(thinking_level="medium"),
@@ -204,31 +273,32 @@ def text_to_pdf(text: str, title: str) -> bytes:
 
 
 # ── Session state ──────────────────────────────────────────────────
-for key in ["resume_text", "feedback", "match", "improved_resume", "cover_letter"]:
+for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# ── Sidebar ────────────────────────────────────────────────────────
+# ── Sidebar (input) ───────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🎯 ResumeIQ")
     st.caption("AI-powered resume feedback, in seconds.")
     st.markdown("---")
-
     uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf")
-    jd_text = st.text_area("Paste a job description (optional)", height=160, placeholder="Paste the job posting here to unlock JD match and tailored cover letter...")
-
+    jd_text = st.text_area("Paste a job description (optional)", height=160, placeholder="Paste the job posting here to unlock JD match and a tailored cover letter...")
     analyze_clicked = st.button("Analyze Resume", type="primary", use_container_width=True)
-
     st.markdown("---")
     st.markdown("Built for the **Generative AI & Prompt Engineering Internship** @ NeuroFive Solutions")
 
-# ── Main ───────────────────────────────────────────────────────────
-st.markdown('<p class="main-title">🎯 Resume<span>IQ</span></p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Upload your resume for an honest, structured AI review — score, job match, an improved rewrite, and a ready-to-send cover letter.</p>', unsafe_allow_html=True)
+# ── Top bar ────────────────────────────────────────────────────────
+st.markdown('''
+<div class="topbar">
+    <div><div class="brand">Resume<span>IQ</span></div><div class="brand-sub">AI-Powered Resume Analyzer</div></div>
+</div>
+''', unsafe_allow_html=True)
 
 if uploaded_file and analyze_clicked:
     st.session_state.resume_text = extract_text(io.BytesIO(uploaded_file.read()))
-    with st.spinner("Scoring your resume..."):
+    st.session_state.resume_name = uploaded_file.name
+    with st.spinner("Analyzing your resume..."):
         st.session_state.feedback = get_feedback(st.session_state.resume_text)
     if jd_text.strip():
         with st.spinner("Comparing against the job description..."):
@@ -239,37 +309,76 @@ if uploaded_file and analyze_clicked:
     st.session_state.cover_letter = None
 
 if st.session_state.resume_text:
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Feedback & Score", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
 
-    # ── Tab 1: Feedback ──
+    # ── Tab 1: Dashboard ──
     with tab1:
         fb = st.session_state.feedback
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown(f'<div class="score-card"><div class="score-number">{fb["overall_score"]}</div><div class="score-label">Overall Score / 100</div></div>', unsafe_allow_html=True)
-        with col2:
-            for s in fb["sections"]:
-                st.markdown(f'<div class="section-card"><span class="section-card-title">{s["name"]}</span><span class="section-card-score">{s["score"]}/100</span><div class="section-card-comment">{s["comment"]}</div></div>', unsafe_allow_html=True)
+        sections = {s["name"]: s for s in fb["sections"]}
 
-        st.markdown("#### Top Suggestions")
-        for sug in fb["top_suggestions"]:
-            st.markdown(f'<div class="suggestion-item">{sug}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="greeting">Resume Analysis Complete ✅</div><div class="greeting-sub">{st.session_state.resume_name}</div>', unsafe_allow_html=True)
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(ring_html("Overall Score", fb["overall_score"], "Keep improving 🎯"), unsafe_allow_html=True)
+        with c2:
+            exp = sections.get("Experience", {}).get("score", 0)
+            st.markdown(ring_html("Experience", exp), unsafe_allow_html=True)
+        with c3:
+            sk = sections.get("Skills", {}).get("score", 0)
+            st.markdown(ring_html("Skills", sk), unsafe_allow_html=True)
+        with c4:
+            fmt = sections.get("Formatting", {}).get("score", 0)
+            st.markdown(ring_html("Formatting", fmt), unsafe_allow_html=True)
+
+        col_left, col_right = st.columns([1.1, 1])
+        with col_left:
+            st.markdown('<div class="panel"><div class="panel-title">Score Overview</div>', unsafe_allow_html=True)
+            st.plotly_chart(radar_chart(fb["sections"]), use_container_width=True, config={"displayModeBar": False})
+            st.markdown('</div>', unsafe_allow_html=True)
+        with col_right:
+            callouts = f'''
+            <div class="panel">
+                <div class="panel-title">Summary</div>
+                <div class="summary-text">{fb["summary"]}</div>
+                <div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Top Suggestion</span><br><span class="callout-text">{fb["top_suggestion"]}</span></div></div>
+            </div>
+            '''
+            st.markdown(callouts, unsafe_allow_html=True)
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            items = "".join(f'<div class="list-item good">{s}</div>' for s in fb["strengths"])
+            st.markdown(f'<div class="panel"><div class="panel-title">✅ Strengths</div>{items}</div>', unsafe_allow_html=True)
+        with c2:
+            items = "".join(f'<div class="list-item warn">{s}</div>' for s in fb["areas_to_improve"])
+            st.markdown(f'<div class="panel"><div class="panel-title">⚠️ Areas to Improve</div>{items}</div>', unsafe_allow_html=True)
+        with c3:
+            found = "".join(f'<span class="chip chip-found">{s}</span>' for s in fb["skills_found"])
+            missing = "".join(f'<span class="chip chip-missing">{s}</span>' for s in fb["missing_skills"])
+            st.markdown(f'<div class="panel"><div class="panel-title">🔎 Skills</div><div style="margin-bottom:10px;">{found}</div><div class="panel-title" style="font-size:0.85rem;color:#9BA1C0;">Missing</div>{missing}</div>', unsafe_allow_html=True)
+
+        st.markdown('''
+        <div class="cta-banner">
+            <div><div class="cta-title">✨ Improve Your Resume with AI</div><div class="cta-sub">Let AI rewrite and optimize your resume to make it recruiter-friendly.</div></div>
+        </div>
+        ''', unsafe_allow_html=True)
 
     # ── Tab 2: JD Match ──
     with tab2:
         if st.session_state.match:
             m = st.session_state.match
             pct = m["match_percentage"]
-            color = "#5FD68A" if pct >= 70 else "#E8B84F" if pct >= 40 else "#E8615F"
+            color = ring_color(pct)
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.markdown(f'<div class="match-card"><div class="match-number" style="color:{color};">{pct}%</div><div class="score-label">Match Score</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="match-hero"><div class="match-number" style="color:{color};">{pct}%</div><div class="kpi-caption">Match Score</div></div>', unsafe_allow_html=True)
             with col2:
-                st.markdown("**Missing Keywords / Skills**")
-                st.markdown("".join(f'<span class="keyword-chip">{k}</span>' for k in m["missing_keywords"]), unsafe_allow_html=True)
-            st.markdown("#### Tailoring Suggestions")
+                chips = "".join(f'<span class="chip chip-missing">{k}</span>' for k in m["missing_keywords"])
+                st.markdown(f'<div class="panel"><div class="panel-title">Missing Keywords / Skills</div>{chips}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="panel-title" style="margin-top:16px;">Tailoring Suggestions</div>', unsafe_allow_html=True)
             for sug in m["tailoring_suggestions"]:
-                st.markdown(f'<div class="suggestion-item">{sug}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="list-item warn">{sug}</div>', unsafe_allow_html=True)
         else:
             st.info("Paste a job description in the sidebar and re-analyze to see your match score.")
 
