@@ -571,55 +571,62 @@ else:
         # ── Tab 1: Dashboard ──
         with tab1:
             fb = st.session_state.feedback
-            sections = {s["name"]: s for s in fb["sections"]}
+            if not fb or not isinstance(fb, dict):
+                st.warning("Something went wrong generating your feedback. Please try analyzing your resume again.")
+            else:
+                sections = {}
+                for s in fb.get("sections", []) or []:
+                    if isinstance(s, dict) and "name" in s:
+                        sections[s["name"]] = s
 
-            st.markdown(f'<div class="greeting">Resume Analysis Complete ✅</div><div class="greeting-sub">{st.session_state.resume_name}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="greeting">Resume Analysis Complete ✅</div><div class="greeting-sub">{st.session_state.resume_name}</div>', unsafe_allow_html=True)
 
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(ring_html("Overall Score", fb["overall_score"], "Keep improving 🎯"), unsafe_allow_html=True)
-            with c2:
-                exp = sections.get("Experience", {}).get("score", 0)
-                st.markdown(ring_html("Experience", exp), unsafe_allow_html=True)
-            with c3:
-                sk = sections.get("Skills", {}).get("score", 0)
-                st.markdown(ring_html("Skills", sk), unsafe_allow_html=True)
-            with c4:
-                fmt = sections.get("Formatting", {}).get("score", 0)
-                st.markdown(ring_html("Formatting", fmt), unsafe_allow_html=True)
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.markdown(ring_html("Overall Score", fb.get("overall_score", 0), "Keep improving 🎯"), unsafe_allow_html=True)
+                with c2:
+                    exp = sections.get("Experience", {}).get("score", 0)
+                    st.markdown(ring_html("Experience", exp), unsafe_allow_html=True)
+                with c3:
+                    sk = sections.get("Skills", {}).get("score", 0)
+                    st.markdown(ring_html("Skills", sk), unsafe_allow_html=True)
+                with c4:
+                    fmt = sections.get("Formatting", {}).get("score", 0)
+                    st.markdown(ring_html("Formatting", fmt), unsafe_allow_html=True)
 
-            col_left, col_right = st.columns([1.1, 1])
-            with col_left:
-                st.markdown('<div class="panel"><div class="panel-title">Score Overview</div>', unsafe_allow_html=True)
-                st.plotly_chart(radar_chart(fb["sections"]), use_container_width=True, config={"displayModeBar": False})
-                st.markdown('</div>', unsafe_allow_html=True)
-            with col_right:
-                callouts = f'''
-                <div class="panel">
-                    <div class="panel-title">Summary</div>
-                    <div class="summary-text">{fb["summary"]}</div>
-                    <div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Top Suggestion</span><br><span class="callout-text">{fb["top_suggestion"]}</span></div></div>
+                col_left, col_right = st.columns([1.1, 1])
+                with col_left:
+                    st.markdown('<div class="panel"><div class="panel-title">Score Overview</div>', unsafe_allow_html=True)
+                    if fb.get("sections"):
+                        st.plotly_chart(radar_chart(fb["sections"]), use_container_width=True, config={"displayModeBar": False})
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with col_right:
+                    callouts = f'''
+                    <div class="panel">
+                        <div class="panel-title">Summary</div>
+                        <div class="summary-text">{fb.get("summary", "")}</div>
+                        <div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Top Suggestion</span><br><span class="callout-text">{fb.get("top_suggestion", "")}</span></div></div>
+                    </div>
+                    '''
+                    st.markdown(callouts, unsafe_allow_html=True)
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    items = "".join(f'<div class="list-item good">{s}</div>' for s in fb.get("strengths", []) or [])
+                    st.markdown(f'<div class="panel"><div class="panel-title">✅ Strengths</div>{items}</div>', unsafe_allow_html=True)
+                with c2:
+                    items = "".join(f'<div class="list-item warn">{s}</div>' for s in fb.get("areas_to_improve", []) or [])
+                    st.markdown(f'<div class="panel"><div class="panel-title">⚠️ Areas to Improve</div>{items}</div>', unsafe_allow_html=True)
+                with c3:
+                    found = "".join(f'<span class="chip chip-found">{s}</span>' for s in fb.get("skills_found", []) or [])
+                    missing = "".join(f'<span class="chip chip-missing">{s}</span>' for s in fb.get("missing_skills", []) or [])
+                    st.markdown(f'<div class="panel"><div class="panel-title">🔎 Skills</div><div style="margin-bottom:10px;">{found}</div><div class="panel-title" style="font-size:0.85rem;color:#9BA1C0;">Missing</div>{missing}</div>', unsafe_allow_html=True)
+
+                st.markdown('''
+                <div class="cta-banner">
+                    <div><div class="cta-title">✨ Improve Your Resume with AI</div><div class="cta-sub">Let AI rewrite and optimize your resume to make it recruiter-friendly.</div></div>
                 </div>
-                '''
-                st.markdown(callouts, unsafe_allow_html=True)
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                items = "".join(f'<div class="list-item good">{s}</div>' for s in fb["strengths"])
-                st.markdown(f'<div class="panel"><div class="panel-title">✅ Strengths</div>{items}</div>', unsafe_allow_html=True)
-            with c2:
-                items = "".join(f'<div class="list-item warn">{s}</div>' for s in fb["areas_to_improve"])
-                st.markdown(f'<div class="panel"><div class="panel-title">⚠️ Areas to Improve</div>{items}</div>', unsafe_allow_html=True)
-            with c3:
-                found = "".join(f'<span class="chip chip-found">{s}</span>' for s in fb["skills_found"])
-                missing = "".join(f'<span class="chip chip-missing">{s}</span>' for s in fb["missing_skills"])
-                st.markdown(f'<div class="panel"><div class="panel-title">🔎 Skills</div><div style="margin-bottom:10px;">{found}</div><div class="panel-title" style="font-size:0.85rem;color:#9BA1C0;">Missing</div>{missing}</div>', unsafe_allow_html=True)
-
-            st.markdown('''
-            <div class="cta-banner">
-                <div><div class="cta-title">✨ Improve Your Resume with AI</div><div class="cta-sub">Let AI rewrite and optimize your resume to make it recruiter-friendly.</div></div>
-            </div>
-            ''', unsafe_allow_html=True)
+                ''', unsafe_allow_html=True)
 
         # ── Tab 2: JD Match ──
         with tab2:
