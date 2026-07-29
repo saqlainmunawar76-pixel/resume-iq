@@ -116,6 +116,13 @@ st.markdown("""
         background: #12162A; border: 1px solid #1F2440; border-radius: 14px;
         padding: 22px 26px; color: #D9DCEE; font-size: 0.92rem; line-height: 1.75; white-space: pre-wrap;
     }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #12162A !important; border: 1px solid #1F2440 !important; border-radius: 14px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] * { color: #D9DCEE !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] h1,
+    [data-testid="stVerticalBlockBorderWrapper"] h2,
+    [data-testid="stVerticalBlockBorderWrapper"] h3 { color: #F1F3FA !important; }
 
     section[data-testid="stSidebar"] { background: #0D0F1C !important; border-right: 1px solid #1F2440; }
     section[data-testid="stSidebar"] * { color: #D9DCEE !important; }
@@ -281,28 +288,95 @@ def get_cover_letter(resume_text: str, jd_text: str = "") -> str:
     return response.text
 
 
+def _md_clean(s: str) -> str:
+    """Strip markdown bold/italic markers and normalize unicode dashes."""
+    s = s.replace("**", "").replace("*", "")
+    s = s.replace("–", "-").replace("—", "-").replace("\u2013", "-").replace("\u2014", "-")
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
 def text_to_pdf(text: str, title: str) -> bytes:
     import textwrap
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(30, 30, 40)
     pdf.cell(0, 10, title, ln=True)
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "", 10.5)
-    clean_text = text.encode("latin-1", "replace").decode("latin-1")
+    pdf.set_draw_color(120, 110, 200)
+    pdf.set_line_width(0.6)
+    pdf.line(10, pdf.get_y(), 60, pdf.get_y())
+    pdf.ln(6)
 
-    for line in clean_text.split("\n"):
-        if not line.strip():
+    def wrapped_cell(txt, width=95, line_h=6):
+        for sub in (textwrap.wrap(txt, width=width, break_long_words=True, break_on_hyphens=True) or [""]):
+            pdf.cell(0, line_h, sub, ln=True)
+
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+
+        if not line:
+            pdf.ln(3)
+            continue
+
+        if line == "---":
+            y = pdf.get_y()
+            pdf.set_draw_color(210, 210, 220)
+            pdf.set_line_width(0.2)
+            pdf.line(10, y, 200, y)
             pdf.ln(4)
             continue
-        # Manually wrap so no single "word" can ever be too wide for fpdf2's
-        # internal multi_cell wrapping (which crashes on long unbreakable tokens
-        # like URLs or unusual dash-separated phrases).
-        wrapped = textwrap.wrap(line, width=95, break_long_words=True, break_on_hyphens=True) or [""]
-        for sub_line in wrapped:
-            pdf.cell(0, 6, sub_line, ln=True)
+
+        # Markdown headings (# Name, ### SECTION)
+        if line.startswith("### "):
+            pdf.set_font("Helvetica", "B", 11.5)
+            pdf.set_text_color(80, 65, 180)
+            wrapped_cell(_md_clean(line[4:]), line_h=7)
+            pdf.set_text_color(30, 30, 40)
+            pdf.ln(1)
+            continue
+        if line.startswith("## "):
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(80, 65, 180)
+            wrapped_cell(_md_clean(line[3:]), line_h=7)
+            pdf.set_text_color(30, 30, 40)
+            pdf.ln(1)
+            continue
+        if line.startswith("# "):
+            pdf.set_font("Helvetica", "B", 16)
+            wrapped_cell(_md_clean(line[2:]), line_h=8)
+            pdf.ln(1)
+            continue
+
+        # Bullet points
+        if line.startswith("* ") or line.startswith("- "):
+            content = _md_clean(line[2:])
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_x(pdf.l_margin + 4)
+            for i, sub in enumerate(textwrap.wrap(content, width=90, break_long_words=True) or [""]):
+                prefix = "-  " if i == 0 else "   "
+                pdf.set_x(pdf.l_margin + 4)
+                pdf.cell(0, 6, prefix + sub, ln=True)
+            continue
+
+        # Full-line italic (e.g. *Jan 2022 - Present*)
+        if line.startswith("*") and line.endswith("*") and not line.startswith("**"):
+            pdf.set_font("Helvetica", "I", 9.5)
+            wrapped_cell(_md_clean(line))
+            pdf.set_font("Helvetica", "", 10)
+            continue
+
+        # Full-line bold (job titles / company names with **)
+        if line.startswith("**"):
+            pdf.set_font("Helvetica", "B", 10.5)
+            wrapped_cell(_md_clean(line))
+            pdf.set_font("Helvetica", "", 10)
+            continue
+
+        # Regular paragraph text
+        pdf.set_font("Helvetica", "", 10)
+        wrapped_cell(_md_clean(line))
     return bytes(pdf.output())
 
 
@@ -310,151 +384,209 @@ def text_to_pdf(text: str, title: str) -> bytes:
 for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter", "jd_text"]:
     if key not in st.session_state:
         st.session_state[key] = None
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = "home"
 
-# ── Top navbar ─────────────────────────────────────────────────────
-st.markdown('''
-<div class="topbar">
-    <div><div class="brand">Resume<span>IQ</span></div><div class="brand-sub">AI-Powered Resume Analyzer</div></div>
-    <div class="nav-links">
-        <span>Home</span><span>How It Works</span><span>About</span>
-    </div>
-</div>
-''', unsafe_allow_html=True)
+# ── Top navbar (functional) ───────────────────────────────────────
+nav_left, nav_r1, nav_r2, nav_r3 = st.columns([5, 1, 1.4, 1])
+with nav_left:
+    st.markdown('<div><div class="brand">Resume<span>IQ</span></div><div class="brand-sub">AI-Powered Resume Analyzer</div></div>', unsafe_allow_html=True)
+with nav_r1:
+    if st.button("Home", key="nav_home", use_container_width=True):
+        st.session_state.nav_page = "home"
+        st.rerun()
+with nav_r2:
+    if st.button("How It Works", key="nav_how", use_container_width=True):
+        st.session_state.nav_page = "how"
+        st.rerun()
+with nav_r3:
+    if st.button("About", key="nav_about", use_container_width=True):
+        st.session_state.nav_page = "about"
+        st.rerun()
+st.markdown('<hr style="border-color:#1F2440; margin: 10px 0 24px 0;">', unsafe_allow_html=True)
 
-# ── Hero upload card (main page, no sidebar) ──────────────────────
-if not st.session_state.resume_text:
-    st.markdown('<div class="hero-title">Get AI-Powered <span>Resume Feedback</span></div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-sub">Upload your resume and get an instant, structured AI review — score breakdown, job match, an improved rewrite, and a ready-to-send cover letter.</div>', unsafe_allow_html=True)
-
-    _, mid, _ = st.columns([1, 2.2, 1])
-    with mid:
-        st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf", label_visibility="visible")
-        jd_input = st.text_area("Paste a job description (optional) — unlocks Job Match & a tailored cover letter", height=130, placeholder="Paste the job posting here...")
-        analyze_clicked = st.button("Analyze Resume", type="primary", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    if uploaded_file and analyze_clicked:
-        st.session_state.resume_text = extract_text(io.BytesIO(uploaded_file.read()))
-        st.session_state.resume_name = uploaded_file.name
-        st.session_state.jd_text = jd_input
-        with st.spinner("Analyzing your resume..."):
-            st.session_state.feedback = get_feedback(st.session_state.resume_text)
-        if jd_input.strip():
-            with st.spinner("Comparing against the job description..."):
-                st.session_state.match = get_match(st.session_state.resume_text, jd_input)
-        else:
-            st.session_state.match = None
-        st.session_state.improved_resume = None
-        st.session_state.cover_letter = None
+# ── How It Works page ──────────────────────────────────────────────
+if st.session_state.nav_page == "how":
+    st.markdown('<div class="hero-title">How <span>ResumeIQ</span> Works</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">From upload to a polished, tailored application kit — in four steps.</div>', unsafe_allow_html=True)
+    steps = [
+        ("1", "Upload Your Resume", "Upload your resume as a PDF. Optionally paste a job description to unlock job-matching and a tailored cover letter."),
+        ("2", "AI Analysis", "Gemini analyzes your resume across four dimensions — Experience, Skills, Formatting, and Impact — using a structured scoring schema, not a vague chat reply."),
+        ("3", "Structured Feedback", "Get an overall score, a radar breakdown, concrete strengths and gaps, and skills found vs. commonly expected but missing."),
+        ("4", "Improved Output", "Generate an AI-rewritten resume and a tailored cover letter, both ready to download as polished PDFs."),
+    ]
+    cols = st.columns(4)
+    for col, (num, title, desc) in zip(cols, steps):
+        with col:
+            st.markdown(f'<div class="panel" style="min-height:190px;"><div style="color:#8B7CF6; font-weight:800; font-size:1.3rem;">{num}</div><div class="panel-title" style="margin-top:6px;">{title}</div><div class="summary-text">{desc}</div></div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("← Back to Home"):
+        st.session_state.nav_page = "home"
         st.rerun()
 
-if st.session_state.resume_text:
-    _, ctrl, _ = st.columns([1, 2.2, 1])
-    with ctrl:
-        if st.button("⬅ Analyze a different resume", use_container_width=True):
-            for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter", "jd_text"]:
-                st.session_state[key] = None
+# ── About page ─────────────────────────────────────────────────────
+elif st.session_state.nav_page == "about":
+    st.markdown('<div class="hero-title">About <span>ResumeIQ</span></div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="panel" style="max-width:720px; margin: 0 auto;">
+        <div class="summary-text" style="font-size:0.95rem;">
+        ResumeIQ was built to solve a simple problem: most people never get real, specific feedback
+        on their resume before it's rejected by an ATS filter or skimmed past by a recruiter.
+        <br><br>
+        Instead of generic advice like "use action verbs," ResumeIQ reads your actual resume and gives
+        structured, honest feedback — a score breakdown, a job-match analysis against a real posting,
+        an AI-rewritten version, and a tailored cover letter — all in under a minute.
+        <br><br>
+        Built using Google's Gemini API with structured JSON outputs, so every score and suggestion is
+        generated from a defined schema, not a loosely parsed chat reply.
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    _, bcol, _ = st.columns([2, 1, 2])
+    with bcol:
+        if st.button("← Back to Home", use_container_width=True):
+            st.session_state.nav_page = "home"
             st.rerun()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
-
-    # ── Tab 1: Dashboard ──
-    with tab1:
-        fb = st.session_state.feedback
-        sections = {s["name"]: s for s in fb["sections"]}
-
-        st.markdown(f'<div class="greeting">Resume Analysis Complete ✅</div><div class="greeting-sub">{st.session_state.resume_name}</div>', unsafe_allow_html=True)
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(ring_html("Overall Score", fb["overall_score"], "Keep improving 🎯"), unsafe_allow_html=True)
-        with c2:
-            exp = sections.get("Experience", {}).get("score", 0)
-            st.markdown(ring_html("Experience", exp), unsafe_allow_html=True)
-        with c3:
-            sk = sections.get("Skills", {}).get("score", 0)
-            st.markdown(ring_html("Skills", sk), unsafe_allow_html=True)
-        with c4:
-            fmt = sections.get("Formatting", {}).get("score", 0)
-            st.markdown(ring_html("Formatting", fmt), unsafe_allow_html=True)
-
-        col_left, col_right = st.columns([1.1, 1])
-        with col_left:
-            st.markdown('<div class="panel"><div class="panel-title">Score Overview</div>', unsafe_allow_html=True)
-            st.plotly_chart(radar_chart(fb["sections"]), use_container_width=True, config={"displayModeBar": False})
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col_right:
-            callouts = f'''
-            <div class="panel">
-                <div class="panel-title">Summary</div>
-                <div class="summary-text">{fb["summary"]}</div>
-                <div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Top Suggestion</span><br><span class="callout-text">{fb["top_suggestion"]}</span></div></div>
-            </div>
-            '''
-            st.markdown(callouts, unsafe_allow_html=True)
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            items = "".join(f'<div class="list-item good">{s}</div>' for s in fb["strengths"])
-            st.markdown(f'<div class="panel"><div class="panel-title">✅ Strengths</div>{items}</div>', unsafe_allow_html=True)
-        with c2:
-            items = "".join(f'<div class="list-item warn">{s}</div>' for s in fb["areas_to_improve"])
-            st.markdown(f'<div class="panel"><div class="panel-title">⚠️ Areas to Improve</div>{items}</div>', unsafe_allow_html=True)
-        with c3:
-            found = "".join(f'<span class="chip chip-found">{s}</span>' for s in fb["skills_found"])
-            missing = "".join(f'<span class="chip chip-missing">{s}</span>' for s in fb["missing_skills"])
-            st.markdown(f'<div class="panel"><div class="panel-title">🔎 Skills</div><div style="margin-bottom:10px;">{found}</div><div class="panel-title" style="font-size:0.85rem;color:#9BA1C0;">Missing</div>{missing}</div>', unsafe_allow_html=True)
-
-        st.markdown('''
-        <div class="cta-banner">
-            <div><div class="cta-title">✨ Improve Your Resume with AI</div><div class="cta-sub">Let AI rewrite and optimize your resume to make it recruiter-friendly.</div></div>
-        </div>
-        ''', unsafe_allow_html=True)
-
-    # ── Tab 2: JD Match ──
-    with tab2:
-        if st.session_state.match:
-            m = st.session_state.match
-            pct = m["match_percentage"]
-            color = ring_color(pct)
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.markdown(f'<div class="match-hero"><div class="match-number" style="color:{color};">{pct}%</div><div class="kpi-caption">Match Score</div></div>', unsafe_allow_html=True)
-            with col2:
-                chips = "".join(f'<span class="chip chip-missing">{k}</span>' for k in m["missing_keywords"])
-                st.markdown(f'<div class="panel"><div class="panel-title">Missing Keywords / Skills</div>{chips}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="panel-title" style="margin-top:16px;">Tailoring Suggestions</div>', unsafe_allow_html=True)
-            for sug in m["tailoring_suggestions"]:
-                st.markdown(f'<div class="list-item warn">{sug}</div>', unsafe_allow_html=True)
-        else:
-            st.info("Paste a job description in the sidebar and re-analyze to see your match score.")
-
-    # ── Tab 3: Improved Resume ──
-    with tab3:
-        if st.session_state.improved_resume is None:
-            if st.button("Generate Improved Resume", type="primary"):
-                with st.spinner("Rewriting your resume..."):
-                    jd_for_improve = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
-                    st.session_state.improved_resume = get_improved_resume(st.session_state.resume_text, jd_for_improve)
-                st.rerun()
-        else:
-            st.markdown(f'<div class="content-box">{st.session_state.improved_resume}</div>', unsafe_allow_html=True)
-            pdf_bytes = text_to_pdf(st.session_state.improved_resume, "Improved Resume")
-            st.download_button("⬇ Download Improved Resume (PDF)", data=pdf_bytes, file_name="improved_resume.pdf", mime="application/pdf")
-
-    # ── Tab 4: Cover Letter ──
-    with tab4:
-        if st.session_state.cover_letter is None:
-            if st.button("Generate Cover Letter", type="primary"):
-                with st.spinner("Writing your cover letter..."):
-                    jd_for_letter = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
-                    st.session_state.cover_letter = get_cover_letter(st.session_state.resume_text, jd_for_letter)
-                st.rerun()
-        else:
-            st.markdown(f'<div class="content-box">{st.session_state.cover_letter}</div>', unsafe_allow_html=True)
-            pdf_bytes = text_to_pdf(st.session_state.cover_letter, "Cover Letter")
-            st.download_button("⬇ Download Cover Letter (PDF)", data=pdf_bytes, file_name="cover_letter.pdf", mime="application/pdf")
-
+# ── Home page ──────────────────────────────────────────────────────
 else:
-    st.info("👈 Upload your resume in the sidebar and click 'Analyze Resume' to get started.")
+    # Hero upload card (main page, no sidebar)
+    if not st.session_state.resume_text:
+        st.markdown('<div class="hero-title">Get AI-Powered <span>Resume Feedback</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-sub">Upload your resume and get an instant, structured AI review — score breakdown, job match, an improved rewrite, and a ready-to-send cover letter.</div>', unsafe_allow_html=True)
+
+        _, mid, _ = st.columns([1, 2.2, 1])
+        with mid:
+            st.markdown('<div class="upload-card">', unsafe_allow_html=True)
+            uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf", label_visibility="visible")
+            jd_input = st.text_area("Paste a job description (optional) — unlocks Job Match & a tailored cover letter", height=130, placeholder="Paste the job posting here...")
+            analyze_clicked = st.button("Analyze Resume", type="primary", use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        if uploaded_file and analyze_clicked:
+            st.session_state.resume_text = extract_text(io.BytesIO(uploaded_file.read()))
+            st.session_state.resume_name = uploaded_file.name
+            st.session_state.jd_text = jd_input
+            with st.spinner("Analyzing your resume..."):
+                st.session_state.feedback = get_feedback(st.session_state.resume_text)
+            if jd_input.strip():
+                with st.spinner("Comparing against the job description..."):
+                    st.session_state.match = get_match(st.session_state.resume_text, jd_input)
+            else:
+                st.session_state.match = None
+            st.session_state.improved_resume = None
+            st.session_state.cover_letter = None
+            st.rerun()
+
+    if st.session_state.resume_text:
+        _, ctrl, _ = st.columns([1, 2.2, 1])
+        with ctrl:
+            if st.button("⬅ Analyze a different resume", use_container_width=True):
+                for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume", "cover_letter", "jd_text"]:
+                    st.session_state[key] = None
+                st.rerun()
+
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
+
+        # ── Tab 1: Dashboard ──
+        with tab1:
+            fb = st.session_state.feedback
+            sections = {s["name"]: s for s in fb["sections"]}
+
+            st.markdown(f'<div class="greeting">Resume Analysis Complete ✅</div><div class="greeting-sub">{st.session_state.resume_name}</div>', unsafe_allow_html=True)
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(ring_html("Overall Score", fb["overall_score"], "Keep improving 🎯"), unsafe_allow_html=True)
+            with c2:
+                exp = sections.get("Experience", {}).get("score", 0)
+                st.markdown(ring_html("Experience", exp), unsafe_allow_html=True)
+            with c3:
+                sk = sections.get("Skills", {}).get("score", 0)
+                st.markdown(ring_html("Skills", sk), unsafe_allow_html=True)
+            with c4:
+                fmt = sections.get("Formatting", {}).get("score", 0)
+                st.markdown(ring_html("Formatting", fmt), unsafe_allow_html=True)
+
+            col_left, col_right = st.columns([1.1, 1])
+            with col_left:
+                st.markdown('<div class="panel"><div class="panel-title">Score Overview</div>', unsafe_allow_html=True)
+                st.plotly_chart(radar_chart(fb["sections"]), use_container_width=True, config={"displayModeBar": False})
+                st.markdown('</div>', unsafe_allow_html=True)
+            with col_right:
+                callouts = f'''
+                <div class="panel">
+                    <div class="panel-title">Summary</div>
+                    <div class="summary-text">{fb["summary"]}</div>
+                    <div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Top Suggestion</span><br><span class="callout-text">{fb["top_suggestion"]}</span></div></div>
+                </div>
+                '''
+                st.markdown(callouts, unsafe_allow_html=True)
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                items = "".join(f'<div class="list-item good">{s}</div>' for s in fb["strengths"])
+                st.markdown(f'<div class="panel"><div class="panel-title">✅ Strengths</div>{items}</div>', unsafe_allow_html=True)
+            with c2:
+                items = "".join(f'<div class="list-item warn">{s}</div>' for s in fb["areas_to_improve"])
+                st.markdown(f'<div class="panel"><div class="panel-title">⚠️ Areas to Improve</div>{items}</div>', unsafe_allow_html=True)
+            with c3:
+                found = "".join(f'<span class="chip chip-found">{s}</span>' for s in fb["skills_found"])
+                missing = "".join(f'<span class="chip chip-missing">{s}</span>' for s in fb["missing_skills"])
+                st.markdown(f'<div class="panel"><div class="panel-title">🔎 Skills</div><div style="margin-bottom:10px;">{found}</div><div class="panel-title" style="font-size:0.85rem;color:#9BA1C0;">Missing</div>{missing}</div>', unsafe_allow_html=True)
+
+            st.markdown('''
+            <div class="cta-banner">
+                <div><div class="cta-title">✨ Improve Your Resume with AI</div><div class="cta-sub">Let AI rewrite and optimize your resume to make it recruiter-friendly.</div></div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+        # ── Tab 2: JD Match ──
+        with tab2:
+            if st.session_state.match:
+                m = st.session_state.match
+                pct = m["match_percentage"]
+                color = ring_color(pct)
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st.markdown(f'<div class="match-hero"><div class="match-number" style="color:{color};">{pct}%</div><div class="kpi-caption">Match Score</div></div>', unsafe_allow_html=True)
+                with col2:
+                    chips = "".join(f'<span class="chip chip-missing">{k}</span>' for k in m["missing_keywords"])
+                    st.markdown(f'<div class="panel"><div class="panel-title">Missing Keywords / Skills</div>{chips}</div>', unsafe_allow_html=True)
+                st.markdown('<div class="panel-title" style="margin-top:16px;">Tailoring Suggestions</div>', unsafe_allow_html=True)
+                for sug in m["tailoring_suggestions"]:
+                    st.markdown(f'<div class="list-item warn">{sug}</div>', unsafe_allow_html=True)
+            else:
+                st.info("Paste a job description above and re-analyze to see your match score.")
+
+        # ── Tab 3: Improved Resume ──
+        with tab3:
+            if st.session_state.improved_resume is None:
+                if st.button("Generate Improved Resume", type="primary"):
+                    with st.spinner("Rewriting your resume..."):
+                        jd_for_improve = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
+                        st.session_state.improved_resume = get_improved_resume(st.session_state.resume_text, jd_for_improve)
+                    st.rerun()
+            else:
+                with st.container(border=True):
+                    st.markdown(st.session_state.improved_resume)
+                pdf_bytes = text_to_pdf(st.session_state.improved_resume, "Improved Resume")
+                st.download_button("⬇ Download Improved Resume (PDF)", data=pdf_bytes, file_name="improved_resume.pdf", mime="application/pdf")
+
+        # ── Tab 4: Cover Letter ──
+        with tab4:
+            if st.session_state.cover_letter is None:
+                if st.button("Generate Cover Letter", type="primary"):
+                    with st.spinner("Writing your cover letter..."):
+                        jd_for_letter = st.session_state.jd_text if st.session_state.jd_text and st.session_state.jd_text.strip() else ""
+                        st.session_state.cover_letter = get_cover_letter(st.session_state.resume_text, jd_for_letter)
+                    st.rerun()
+            else:
+                with st.container(border=True):
+                    st.markdown(st.session_state.cover_letter)
+                pdf_bytes = text_to_pdf(st.session_state.cover_letter, "Cover Letter")
+                st.download_button("⬇ Download Cover Letter (PDF)", data=pdf_bytes, file_name="cover_letter.pdf", mime="application/pdf")
+
+    else:
+        st.info("👈 Upload your resume above and click 'Analyze Resume' to get started.")
