@@ -461,6 +461,8 @@ if "nav_page" not in st.session_state:
     st.session_state.nav_page = "home"
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "pending_question" not in st.session_state:
+    st.session_state.pending_question = None
 if "compare_result" not in st.session_state:
     st.session_state.compare_result = None
 
@@ -667,27 +669,49 @@ else:
 
         # ── Tab 5: Resume Chatbot ──
         with tab5:
-            st.markdown('<div class="panel-title">💬 Ask questions about your resume</div>', unsafe_allow_html=True)
+            hcol1, hcol2 = st.columns([4, 1])
+            with hcol1:
+                st.markdown('<div class="panel-title">💬 Ask My Resume</div><div class="summary-text" style="margin-top:-6px;">Ask anything about your resume — answers are grounded strictly in what you actually wrote.</div>', unsafe_allow_html=True)
+            with hcol2:
+                if st.session_state.chat_history:
+                    if st.button("🗑️ Clear", use_container_width=True):
+                        st.session_state.chat_history = []
+                        st.rerun()
+
+            if not st.session_state.chat_history:
+                st.markdown('<div class="summary-text" style="margin: 10px 0 6px 0;">Try one of these, or type your own below:</div>', unsafe_allow_html=True)
+                example_qs = [
+                    "What's my strongest project?",
+                    "How many years of experience do I have?",
+                    "What skills am I missing for a senior role?",
+                    "Summarize my resume in 3 sentences",
+                ]
+                chip_cols = st.columns(4)
+                for col, eq in zip(chip_cols, example_qs):
+                    with col:
+                        if st.button(eq, key=f"chip_{eq}", use_container_width=True):
+                            st.session_state.pending_question = eq
+                st.markdown("<br>", unsafe_allow_html=True)
+
             for turn in st.session_state.chat_history:
-                with st.chat_message("user"):
+                with st.chat_message("user", avatar="🧑‍💻"):
                     st.markdown(turn["q"])
-                with st.chat_message("assistant"):
+                with st.chat_message("assistant", avatar="🎯"):
                     st.markdown(turn["a"])
 
-            question = st.chat_input("e.g. What's my strongest project? How many years of Python experience do I have?")
+            typed_question = st.chat_input("Ask something about your resume...")
+            question = st.session_state.pending_question or typed_question
+            st.session_state.pending_question = None
+
             if question:
-                with st.chat_message("user"):
+                with st.chat_message("user", avatar="🧑‍💻"):
                     st.markdown(question)
-                with st.chat_message("assistant"):
+                with st.chat_message("assistant", avatar="🎯"):
                     with st.spinner("Thinking..."):
                         answer = chat_about_resume(st.session_state.resume_text, st.session_state.chat_history, question)
                     st.markdown(answer)
                 st.session_state.chat_history.append({"q": question, "a": answer})
-
-            if st.session_state.chat_history:
-                if st.button("🗑️ Clear chat"):
-                    st.session_state.chat_history = []
-                    st.rerun()
+                st.rerun()
 
         # ── Tab 6: Version Compare ──
         with tab6:
