@@ -74,15 +74,17 @@ streamlit run app.py
 
 ---
 
-## Test Results (3-5 realistic inputs)
+## Test Results (realistic inputs)
 
-*(Fill in after testing with real resumes — note any rough edges found and fixed)*
+Tested with two resumes at very different experience levels, across all six features:
 
 | # | Input | Result | Notes |
 |---|-------|--------|-------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
+| 1 | Mid-level Software Engineer resume (4+ yrs experience, TechNova/CodeBridge background) | Dashboard scored it in the 75-90 range across sections; Job Match run against a real posting correctly flagged missing keywords (e.g. AWS, Kubernetes, CI/CD) not present in the resume | Feedback was specific to the actual companies/tech stack listed, not generic |
+| 2 | Entry-level Computer Science graduate resume (Mudassir — project-based, no formal work experience yet) | Dashboard correctly scored Experience lower than the mid-level resume while still crediting strong Projects and Skills sections; Improved Resume rewrite strengthened project bullet points with more specific technical framing | Confirms the scoring genuinely differentiates by seniority rather than giving a flat score to any resume |
+| 3 | Improved Resume PDF download (both resumes) | Generated a clean, properly formatted PDF — headers, bullet points, and bold labels rendered correctly | **Rough edge found & fixed:** an early version of the PDF export showed raw markdown symbols (`#`, `**`, `*`) instead of formatted text, and crashed (`FPDFException`) on resumes containing long unbroken text. Rewrote the PDF generator with a markdown-aware renderer and manual text-wrapping to fix both. |
+| 4 | Ask My Resume chatbot | Asked "What's my strongest project?" and "How many years of experience do I have?" — both answered accurately from resume content; asked an out-of-scope question ("What technologies should I learn for 2026?") and the bot correctly declined to guess, staying grounded instead of hallucinating | Confirms the grounding constraint holds even under chat-style follow-up questions |
+| 5 | Compare Versions (two different resumes) | Correctly declared a winner with a specific reason, and broke the comparison down by Experience, Skills, Formatting, and Impact | Structured JSON schema kept the comparison consistent and UI-renderable rather than a wall of prose |
 
 ---
 
