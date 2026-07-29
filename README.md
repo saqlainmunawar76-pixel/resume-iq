@@ -18,11 +18,13 @@ Most people never get real feedback on their resume before it's rejected by an A
 ## Core Flow
 
 1. **Input:** User uploads a resume (PDF) and optionally pastes a job description
-2. **Output:** Four AI-generated results, organized into tabs:
-   - **Feedback & Score** — overall score (0-100) + section-by-section breakdown (Experience, Skills, Formatting, Impact) + top improvement suggestions
+2. **Output:** Six AI-generated views, organized into tabs:
+   - **Dashboard** — overall score (0-100) + section-by-section breakdown (Experience, Skills, Formatting, Impact) with a radar chart, strengths, gaps, and skills found vs. missing
    - **Job Match** — match percentage against the pasted job description, missing keywords, and tailoring suggestions
    - **Improved Resume** — a rewritten version with stronger language and structure, downloadable as a PDF
    - **Cover Letter** — a tailored cover letter (or a generic professional one if no job description was provided), downloadable as a PDF
+   - **Ask My Resume** — a chat interface to ask natural-language questions about your own resume ("What's my strongest project?"), answered strictly from the resume content
+   - **Compare Versions** — upload a second resume to see a structured side-by-side comparison, a declared winner, and a recommendation
 
 ---
 

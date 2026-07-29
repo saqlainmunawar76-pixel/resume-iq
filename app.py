@@ -24,7 +24,10 @@ st.set_page_config(page_title="ResumeIQ | AI Resume Feedback", page_icon="🎯",
 # ── Styling — Dashboard theme: deep navy + blue-violet accent ─────
 st.markdown("""
 <style>
-    .stApp { background: #0B0E1A; }
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], .main {
+        background: #0B0E1A !important;
+    }
+    .stApp * { color: #D9DCEE; }
     * { font-family: 'Inter', -apple-system, sans-serif; }
 
     .topbar {
@@ -119,22 +122,40 @@ st.markdown("""
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #12162A !important; border: 1px solid #1F2440 !important; border-radius: 14px !important;
     }
-    [data-testid="stVerticalBlockBorderWrapper"] * { color: #D9DCEE !important; }
-    [data-testid="stVerticalBlockBorderWrapper"] h1,
-    [data-testid="stVerticalBlockBorderWrapper"] h2,
-    [data-testid="stVerticalBlockBorderWrapper"] h3 { color: #F1F3FA !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] li,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] span,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] strong {
+        color: #E4E7F5 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] h3 {
+        color: #F1F3FA !important;
+    }
 
     section[data-testid="stSidebar"] { background: #0D0F1C !important; border-right: 1px solid #1F2440; }
     section[data-testid="stSidebar"] * { color: #D9DCEE !important; }
     section[data-testid="stSidebar"] h3 { color: #8B7CF6 !important; }
-    .stButton button[kind="primary"] { background-color: #6D5AE6 !important; border: none !important; font-weight: 600 !important; }
+    .stButton button[kind="primary"] { background-color: #6D5AE6 !important; border: none !important; color: #FFFFFF !important; font-weight: 600 !important; }
+    .stButton button[kind="secondary"] {
+        background-color: #12162A !important; border: 1px solid #2E3358 !important; color: #D9DCEE !important;
+    }
+    .stButton button[kind="secondary"]:hover { border-color: #6D5AE6 !important; color: #F1F3FA !important; }
+    .stTabs [data-baseweb="tab-list"] { background-color: transparent !important; border-bottom: 1px solid #1F2440 !important; }
+    .stTabs [data-baseweb="tab"] { color: #8B92B0 !important; background-color: transparent !important; }
+    .stTabs [aria-selected="true"] { color: #8B7CF6 !important; }
     .stDownloadButton button { background-color: #1A1F3A !important; color: #F1F3FA !important; border: 1px solid #2E3358 !important; }
     [data-testid="stFileUploaderDropzone"] { background-color: #12162A !important; border: 1.5px dashed #2E3358 !important; }
     [data-testid="stFileUploaderDropzone"] * { color: #B4B9D4 !important; }
     .stTextArea textarea { background-color: #12162A !important; color: #D9DCEE !important; border: 1px solid #2E3358 !important; }
     [data-testid="stAlert"] { background-color: #12162A !important; color: #D9DCEE !important; }
     [data-testid="stAlert"] * { color: #D9DCEE !important; }
-    .stTabs [data-baseweb="tab"] { color: #8B92B0; }
+    [data-testid="stChatMessage"] { background-color: #12162A !important; border: 1px solid #1F2440 !important; border-radius: 12px !important; }
+    [data-testid="stChatMessage"] * { color: #D9DCEE !important; }
+    [data-testid="stChatInput"] textarea { background-color: #12162A !important; color: #D9DCEE !important; }
+    [data-testid="stChatInput"] { background-color: #0B0E1A !important; border: 1px solid #2E3358 !important; }
+
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -256,6 +277,58 @@ def get_match(resume_text: str, jd_text: str) -> dict:
         config=types.GenerateContentConfig(
             system_instruction="You are an ATS and recruiting expert. Compare the resume against the job description. Calculate a realistic match percentage, list specific important keywords/skills from the JD missing from the resume, and give concrete tailoring suggestions.",
             response_mime_type="application/json", response_schema=MATCH_SCHEMA,
+            thinking_config=types.ThinkingConfig(thinking_level="medium"),
+        ),
+    )
+    return json.loads(response.text)
+
+
+def chat_about_resume(resume_text: str, history: list[dict], question: str) -> str:
+    """Stateless resume Q&A: previous turns are folded into the prompt as context."""
+    convo = ""
+    for turn in history[-6:]:  # keep last 6 turns for context, avoid unbounded growth
+        convo += f"User: {turn['q']}\nAssistant: {turn['a']}\n"
+    prompt = f"Resume:\n{resume_text}\n\nConversation so far:\n{convo}\nUser: {question}"
+    response = client.models.generate_content(
+        model=MODEL, contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction="You are a helpful career assistant. Answer questions about the user's resume using ONLY the resume content provided. If asked something not answerable from the resume (e.g. salary expectations, personal opinions), say so honestly and briefly suggest how they could find that out. Keep answers concise and conversational.",
+            thinking_config=types.ThinkingConfig(thinking_level="low"),
+        ),
+    )
+    return response.text
+
+
+COMPARE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "winner": {"type": "string", "enum": ["Resume A", "Resume B", "Tie"]},
+        "winner_reason": {"type": "string"},
+        "differences": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "aspect": {"type": "string"},
+                    "resume_a_note": {"type": "string"},
+                    "resume_b_note": {"type": "string"},
+                },
+                "required": ["aspect", "resume_a_note", "resume_b_note"],
+            },
+        },
+        "recommendation": {"type": "string"},
+    },
+    "required": ["winner", "winner_reason", "differences", "recommendation"],
+}
+
+
+def compare_resumes(resume_a: str, resume_b: str) -> dict:
+    prompt = f"Resume A:\n{resume_a}\n\nResume B:\n{resume_b}"
+    response = client.models.generate_content(
+        model=MODEL, contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction="You are an expert resume reviewer comparing two versions of a resume (or two candidates). Determine which is stronger overall and why. Break down 3-5 key aspects (e.g. Experience clarity, Skills relevance, Formatting, Impact/metrics) noting how each resume does on that aspect. Give one clear final recommendation.",
+            response_mime_type="application/json", response_schema=COMPARE_SCHEMA,
             thinking_config=types.ThinkingConfig(thinking_level="medium"),
         ),
     )
@@ -386,6 +459,10 @@ for key in ["resume_text", "resume_name", "feedback", "match", "improved_resume"
         st.session_state[key] = None
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "home"
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "compare_result" not in st.session_state:
+    st.session_state.compare_result = None
 
 # ── Top navbar (functional) ───────────────────────────────────────
 nav_left, nav_r1, nav_r2, nav_r3 = st.columns([5, 1, 1.4, 1])
@@ -487,7 +564,7 @@ else:
                     st.session_state[key] = None
                 st.rerun()
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter"])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Dashboard", "🎯 Job Match", "✨ Improved Resume", "✉️ Cover Letter", "💬 Ask My Resume", "🔀 Compare Versions"])
 
         # ── Tab 1: Dashboard ──
         with tab1:
@@ -588,5 +665,65 @@ else:
                 pdf_bytes = text_to_pdf(st.session_state.cover_letter, "Cover Letter")
                 st.download_button("⬇ Download Cover Letter (PDF)", data=pdf_bytes, file_name="cover_letter.pdf", mime="application/pdf")
 
+        # ── Tab 5: Resume Chatbot ──
+        with tab5:
+            st.markdown('<div class="panel-title">💬 Ask questions about your resume</div>', unsafe_allow_html=True)
+            for turn in st.session_state.chat_history:
+                with st.chat_message("user"):
+                    st.markdown(turn["q"])
+                with st.chat_message("assistant"):
+                    st.markdown(turn["a"])
+
+            question = st.chat_input("e.g. What's my strongest project? How many years of Python experience do I have?")
+            if question:
+                with st.chat_message("user"):
+                    st.markdown(question)
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        answer = chat_about_resume(st.session_state.resume_text, st.session_state.chat_history, question)
+                    st.markdown(answer)
+                st.session_state.chat_history.append({"q": question, "a": answer})
+
+            if st.session_state.chat_history:
+                if st.button("🗑️ Clear chat"):
+                    st.session_state.chat_history = []
+                    st.rerun()
+
+        # ── Tab 6: Version Compare ──
+        with tab6:
+            st.markdown('<div class="panel-title">🔀 Compare against another resume version</div>', unsafe_allow_html=True)
+            st.caption("Upload a second resume (a different draft, or another candidate) to see which is stronger and why.")
+            second_file = st.file_uploader("Upload Resume B (PDF)", type="pdf", key="compare_upload")
+
+            if second_file and st.button("Compare Resumes", type="primary"):
+                with st.spinner("Comparing both resumes..."):
+                    resume_b_text = extract_text(io.BytesIO(second_file.read()))
+                    st.session_state.compare_result = compare_resumes(st.session_state.resume_text, resume_b_text)
+
+            if st.session_state.compare_result:
+                cr = st.session_state.compare_result
+                winner_color = "#5FD68A" if cr["winner"] != "Tie" else "#E8B84F"
+                st.markdown(f'''
+                <div class="match-hero">
+                    <div class="match-number" style="color:{winner_color}; font-size:1.8rem;">{cr["winner"]}</div>
+                    <div class="kpi-caption">{cr["winner_reason"]}</div>
+                </div>
+                ''', unsafe_allow_html=True)
+
+                st.markdown('<div class="panel-title" style="margin-top:18px;">Side-by-Side Breakdown</div>', unsafe_allow_html=True)
+                for d in cr["differences"]:
+                    st.markdown(f'''
+                    <div class="panel">
+                        <div class="section-card-title" style="margin-bottom:8px;">{d["aspect"]}</div>
+                        <div style="display:flex; gap:20px;">
+                            <div style="flex:1;"><b style="color:#8FC2FF;">Resume A (yours):</b><br><span class="summary-text">{d["resume_a_note"]}</span></div>
+                            <div style="flex:1;"><b style="color:#C9B8FF;">Resume B:</b><br><span class="summary-text">{d["resume_b_note"]}</span></div>
+                        </div>
+                    </div>
+                    ''', unsafe_allow_html=True)
+
+                st.markdown(f'<div class="callout"><span class="callout-icon">💡</span><div><span class="callout-label">Recommendation</span><br><span class="callout-text">{cr["recommendation"]}</span></div></div>', unsafe_allow_html=True)
+
     else:
         st.info("👈 Upload your resume above and click 'Analyze Resume' to get started.")
+
