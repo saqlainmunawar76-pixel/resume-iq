@@ -4,8 +4,8 @@
 
 An AI-powered mini-app that gives job seekers honest, structured feedback on their resume — a score breakdown, a job-description match analysis, an AI-rewritten version, and a tailored cover letter, all in one place.
 
-🔗 **Live demo:** [Insert your Streamlit app link here after deploying]
-🎥 **Video walkthrough:** [Insert your LinkedIn video link here]
+🔗 **Live demo:** https://resume-iq-su65ect6t3fr7ms7xclgzt.streamlit.app/
+🎥 **Video walkthrough:** https://lnkd.in/p/dync2sv9
 
 ---
 
